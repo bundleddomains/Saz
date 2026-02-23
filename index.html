@@ -1,64 +1,156 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Little LLM v0</title>
+<title>Little LLM Trainer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <style>
-body {
-  font-family: system-ui;
-  text-align: center;
-  margin-top: 80px;
-}
-button {
-  font-size: 20px;
-  padding: 10px 20px;
-  margin: 10px;
-}
-#sequence {
-  font-size: 40px;
-  margin: 40px 0;
-}
+  body {font-family:system-ui,-apple-system,sans-serif;text-align:center;margin:0;padding:20px;background:#0a0a0a;color:#0f0;min-height:100vh}
+  h1 {font-size:28px;margin:20px 0 10px}
+  #sequence {font-size:56px;font-weight:bold;letter-spacing:12px;margin:40px 0;min-height:80px;background:#111;padding:20px;border-radius:16px}
+  button {font-size:24px;padding:18px 32px;margin:8px;border:none;border-radius:16px;background:#0f0;color:#000;font-weight:bold;min-width:160px}
+  button:active {transform:scale(0.95);background:#0c0}
+  .red {background:#f33;color:#fff}
+  .small {font-size:18px;padding:12px 20px;min-width:auto;margin:4px}
+  #score,#status {font-size:22px;margin:15px 0}
 </style>
 </head>
 <body>
-
-<h1>Little Language Model</h1>
-
+<h1>Little LLM Trainer</h1>
 <div id="sequence">Press Generate</div>
 
-<button onclick="generate()">Generate</button>
-<br>
-<button onclick="yes()">YES</button>
-<button onclick="no()">NO</button>
+<button onclick="generate()">Generate</button><br><br>
+<button onclick="yes()">YES 👍</button>
+<button onclick="no()" class="red">NO 👎</button><br><br>
+
+<button onclick="train()" class="small">Train Model</button>
+<button onclick="exportData()" class="small">Export Data</button>
+<button onclick="importData()" class="small">Import Data</button>
+<button onclick="clearData()" class="small">Clear All</button>
 
 <p id="score">Score: 0</p>
+<p id="status">Dataset: 0 examples</p>
 
 <script>
 let tokens = ["D","F","I"];
 let current = "";
 let score = 0;
+let dataset = [];
+
+const sequenceEl = document.getElementById("sequence");
+const scoreEl = document.getElementById("score");
+const statusEl = document.getElementById("status");
+
+function loadData() {
+  const saved = localStorage.getItem("littleLLMDataset");
+  if (saved) dataset = JSON.parse(saved);
+  updateStatus();
+}
+function saveData() {
+  localStorage.setItem("littleLLMDataset", JSON.stringify(dataset));
+  updateStatus();
+}
+function updateStatus() { statusEl.textContent = `Dataset: ${dataset.length} examples`; }
 
 function generate() {
-  current = tokens.slice().sort(() => Math.random() - 0.5).join("");
-  document.getElementById("sequence").innerText = current;
+  if (dataset.length === 0) {
+    current = tokens.slice().sort(() => Math.random() - 0.5).join("");
+  } else {
+    const allPerms = getAllPerms();
+    const weights = allPerms.map(seq => getSeqScore(seq));
+    let total = weights.reduce((a,b)=>a+b,0) || 1;
+    let rand = Math.random() * total;
+    let i = 0;
+    for (; i < weights.length; i++) {
+      rand -= weights[i];
+      if (rand <= 0) break;
+    }
+    current = allPerms[i];
+  }
+  sequenceEl.textContent = current;
+}
+
+function getAllPerms() {
+  const perms = [];
+  for (let a of tokens) for (let b of tokens) if (b!==a)
+    for (let c of tokens) if (c!==a && c!==b) perms.push(a+b+c);
+  return perms;
+}
+
+function getSeqScore(seq) {
+  const examples = dataset.filter(d => d.seq === seq);
+  if (examples.length === 0) return 1;
+  const avg = examples.reduce((sum,d)=>sum + d.label, 0) / examples.length;
+  return Math.max(0.1, avg + 1);
 }
 
 function yes() {
   if (!current) return;
   score++;
-  update();
+  dataset.push({seq: current, label: 1});
+  saveData();
+  scoreEl.textContent = "Score: " + score;
 }
 
 function no() {
   if (!current) return;
   score--;
-  update();
+  dataset.push({seq: current, label: -1});
+  saveData();
+  scoreEl.textContent = "Score: " + score;
 }
 
-function update() {
-  document.getElementById("score").innerText = "Score: " + score;
+function train() {
+  if (dataset.length === 0) { alert("Do some YES/NO first!"); return; }
+  alert(`Trained on ${dataset.length} examples! Generate now smarter 💪`);
+  generate();
 }
+
+function exportData() {
+  const dataStr = JSON.stringify(dataset, null, 2);
+  const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+  const link = document.createElement('a');
+  link.setAttribute('href', dataUri);
+  link.setAttribute('download', 'llm-training-data.json');
+  link.click();
+}
+
+function importData() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.onchange = e => {
+    const file = e.target.files[0];
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        dataset = JSON.parse(ev.target.result);
+        saveData();
+        alert(`Loaded ${dataset.length} examples!`);
+      } catch(err) { alert("Bad file"); }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
+function clearData() {
+  if (confirm("Clear ALL training?")) {
+    dataset = [];
+    saveData();
+    alert("Cleared — back to random");
+  }
+}
+
+// Keyboard for when you use desktop too
+document.addEventListener("keydown", e => {
+  if (e.key.toLowerCase() === "g") generate();
+  if (e.key === "1") yes();
+  if (e.key === "2") no();
+});
+
+loadData();
+generate(); // start with one
 </script>
-
 </body>
 </html>
